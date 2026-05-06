@@ -1,4 +1,4 @@
-# HamBot Client
+# robot_tracking_client
 
 Robot-side client for the HamBot Overhead Perception System.
 
@@ -10,31 +10,32 @@ available to your behavior code via a simple `get()` call.
 
 ## How the System Works
 
-HamBot operates as part of a two-component system:
+HamBot operates as a two-component system:
 
 ```
-┌─────────────────────────────────┐         ┌──────────────────────────┐
-│         Overhead PC             │   TCP   │         HamBot           │
-│                                 │ ──────► │                          │
-│  Ceiling-mounted camera         │  JSON   │  world_state_receiver.py │
-│  Detects robots in the field    │  ~30Hz  │                          │
-│  Streams world state to clients │         │  Your behavior code      │
-└─────────────────────────────────┘         └──────────────────────────┘
+┌──────────────────────────────────┐         ┌──────────────────────────────────────┐
+│          Jetson Nano             │   TCP   │              HamBot                  │
+│                                  │ ──────► │                                      │
+│  Ceiling-mounted RealSense D435  │  JSON   │  world_state_receiver.py             │
+│  Detects robots in the field     │  ~30Hz  │    background thread caches latest   │
+│  Streams world state to clients  │         │                                      │
+│                                  │         │  receiver.get()  ← behavior code    │
+└──────────────────────────────────┘         └──────────────────────────────────────┘
 ```
 
-**Overhead Perception Server** — runs on the lab PC connected to the ceiling
+**Overhead Perception Server** — runs on the Jetson Nano connected to the ceiling
 camera. Detects all robots in the field and streams a world state JSON packet
 to every connected robot client. You do not need to modify or run this
 yourself — the lab provides it.
 
-**HamBot Client** (this repo) — runs on your robot's Raspberry Pi. Connects
-to the server, caches the latest world state, and lets your behavior code
-pull it on demand.
+**robot_tracking_client** (this repo) — runs on your robot's Raspberry Pi. A
+background thread connects to the server and caches the latest world state.
+Your behavior code calls `receiver.get()` on demand to pull the current state.
 
 See [PROTOCOL.md](PROTOCOL.md) for the full packet specification.
 
 The overhead server lives in a separate repository:
-[hambot-perception-server](https://github.com/fraze-dev/hambot-perception-server)
+[robot_tracking_server](https://github.com/biorobaw/robot_tracking_server.git)
 
 ---
 
@@ -42,7 +43,7 @@ The overhead server lives in a separate repository:
 
 - Python 3.11+
 - Raspberry Pi running HamBot hardware drivers
-- Network connection to the lab overhead PC
+- Network connection to the lab Jetson Nano
 
 This repo has **no dependency on RealSense, OpenCV, or NumPy**.
 All networking uses Python stdlib only: `socket`, `json`, `time`, `threading`.
@@ -52,14 +53,14 @@ All networking uses Python stdlib only: `socket`, `json`, `time`, `threading`.
 ## Installation
 
 ```bash
-git clone https://github.com/fraze-dev/hambot-client.git
-cd hambot-client
+git clone https://github.com/biorobaw/robot_tracking_client.git
+cd robot_tracking_client
 ```
 
 No additional packages required for `world_state_receiver.py`.
 
-If you are running the `push_to_goal.py` example, your robot will also need
-the HamBot hardware drivers and `pid_controller.py` (included in this repo).
+If you are using `pid_controller.py`, your robot will also need
+the HamBot hardware drivers (included separately).
 
 ---
 
@@ -99,12 +100,12 @@ finally:
 
 Instantiating the class starts the background receive thread immediately.
 
-| Parameter       | Type       | Default | Description                                      |
-|-----------------|------------|---------|--------------------------------------------------|
-| `server_ip`     | `str`      | —       | IP address of the overhead PC (required)         |
-| `port`          | `int`      | `9999`  | TCP port (must match server)                     |
-| `on_connect`    | `callable` | `None`  | Called (no args) when connection is established  |
-| `on_disconnect` | `callable` | `None`  | Called (no args) when connection is lost         |
+| Parameter       | Type       | Default | Description                                       |
+|-----------------|------------|---------|---------------------------------------------------|
+| `server_ip`     | `str`      | —       | IP address of the Jetson Nano (required)          |
+| `port`          | `int`      | `9999`  | TCP port (must match server)                      |
+| `on_connect`    | `callable` | `None`  | Called (no args) when connection is established   |
+| `on_disconnect` | `callable` | `None`  | Called (no args) when connection is lost          |
 
 ### `get() → (dict | None, float | None)`
 
@@ -131,40 +132,25 @@ Always call this before your program exits.
 ## Repository Structure
 
 ```
-hambot-client/
+robot_tracking_client/
 ├── world_state_receiver.py   # Core client — import this into your code
 ├── pid_controller.py         # PID controllers and steering math
-├── examples/
-│   └── push_to_goal.py       # Full behavior example: seek ball, push to goal
+├── client_example.py         # Minimal usage example
 ├── PROTOCOL.md               # World state JSON packet specification
 └── README.md
 ```
 
 ---
 
-## Examples
-
-### `push_to_goal.py`
-
-A complete behavior implementation using `WorldStateReceiver`. The robot
-detects a ball, drives toward it, and pushes it to the goal using PID-based
-heading and speed control.
-
-```bash
-python examples/push_to_goal.py --server-ip 192.168.1.100
-```
-
-Use this as a starting point for your own behavior code.
-
----
-
 ## Finding the Server IP
 
-Ask your lab instructor for the overhead PC's IP address, or find it yourself:
+Ask your lab instructor for the Jetson Nano's IP address, or find it on the
+Jetson Nano itself:
 
-- **Windows:** run `ipconfig` in a terminal, look for the IPv4 address on the
-  WiFi adapter
-- **Linux/Mac:** run `ip addr` or `ifconfig`
+```
+ip addr
+# Look for the IP on your WiFi or Ethernet adapter
+```
 
 ---
 
